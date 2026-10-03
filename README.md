@@ -551,4 +551,4 @@ Body:
 
 ## License
 
-This project was developed as part of a backend engineering assessment.
+B Venkatesh Reddy.
