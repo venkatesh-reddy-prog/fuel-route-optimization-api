@@ -12,6 +12,11 @@ The application combines:
 - A fuel-cost optimization algorithm
 
 ---
+## Architecture Overview
+
+![Fuel Route Optimization API Architecture](docs/fuel-route-architecture.png)
+
+---
 
 ## Features
 
