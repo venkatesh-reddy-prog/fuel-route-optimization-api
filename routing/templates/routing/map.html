@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Fuel Route Planner</title>
+
+    <link
+        rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f5f5f5;
+        }
+
+        .header {
+            padding: 15px 25px;
+            background: #222;
+            color: white;
+        }
+
+        .header h2 {
+            margin: 0 0 5px 0;
+        }
+
+        .controls {
+            padding: 15px 25px;
+            background: white;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        input {
+            padding: 10px;
+            width: 200px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+
+        button {
+            padding: 10px 18px;
+            border: none;
+            border-radius: 5px;
+            background: #2563eb;
+            color: white;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #1d4ed8;
+        }
+
+        #map {
+            height: 600px;
+            width: 100%;
+        }
+
+        .summary {
+            padding: 15px 25px;
+            background: white;
+        }
+
+        .summary span {
+            margin-right: 25px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="header">
+    <h2>Fuel Route Planner</h2>
+    <div>Route optimization based on fuel prices</div>
+</div>
+
+<div class="controls">
+
+    <input
+        type="text"
+        id="start"
+        value="Birmingham, AL"
+        placeholder="Start: City, STATE"
+    >
+
+    <input
+        type="text"
+        id="finish"
+        value="Dallas, TX"
+        placeholder="Finish: City, STATE"
+    >
+
+    <button onclick="calculateRoute()">
+        Calculate Route
+    </button>
+
+</div>
+
+<div class="summary" id="summary">
+    Enter locations and calculate the route.
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+
+    const map = L.map("map").setView([32.5, -90], 6);
+
+    L.tileLayer(
+        "https://{s}.tile.openstreetmap.de/{z}/{x}/{y}.png",
+        {
+            attribution: "&copy; OpenStreetMap contributors", 
+            maxZoom: 20
+        }
+    ).addTo(map);
+
+    let routeLayer = null;
+    let markersLayer = L.layerGroup().addTo(map);
+
+
+    async function calculateRoute() {
+
+        const start = document.getElementById("start").value;
+        const finish = document.getElementById("finish").value;
+
+        if (!start || !finish) {
+            alert("Please enter both start and finish locations.");
+            return;
+        }
+
+        try {
+
+            document.getElementById("summary").innerHTML =
+                "Calculating route...";
+
+            const response = await fetch("/api/v1/route/", {
+
+                method: "POST",
+
+                headers: {
+                    "Content-Type": "application/json"
+                },
+
+                body: JSON.stringify({
+                    start: start,
+                    finish: finish
+                })
+
+            });
+
+
+            const data = await response.json();
+
+
+            if (!response.ok) {
+
+                throw new Error(
+                    data.error || "Unable to calculate route."
+                );
+
+            }
+
+
+            displayRoute(data);
+
+        } catch (error) {
+
+            console.error(error);
+
+            document.getElementById("summary").innerHTML =
+                `<strong>Error:</strong> ${error.message}`;
+
+        }
+
+    }
+
+
+    function displayRoute(data) {
+
+        // Remove previous route
+        if (routeLayer) {
+
+            map.removeLayer(routeLayer);
+
+        }
+
+        // Remove previous markers
+        markersLayer.clearLayers();
+
+
+        const coordinates =
+            data.route.geometry.coordinates.map(
+                point => [point[1], point[0]]
+            );
+
+
+        // Draw route
+        routeLayer = L.polyline(
+            coordinates,
+            {
+                color: "blue",
+                weight: 5,
+                opacity: 0.8
+            }
+        ).addTo(map);
+
+
+        // Start marker
+        const startMarker = L.marker([
+            data.start.latitude,
+            data.start.longitude
+        ]).addTo(markersLayer);
+
+
+        startMarker.bindPopup(
+            `<b>Start</b><br>
+             ${data.start.city}, ${data.start.state}`
+        );
+
+
+        // Finish marker
+        const finishMarker = L.marker([
+            data.finish.latitude,
+            data.finish.longitude
+        ]).addTo(markersLayer);
+
+
+        finishMarker.bindPopup(
+            `<b>Destination</b><br>
+             ${data.finish.city}, ${data.finish.state}`
+        );
+
+
+        // Fuel stops
+        data.fuel.fuel_stops.forEach(
+            (stop, index) => {
+
+                const marker = L.circleMarker(
+                    [
+                        stop.latitude,
+                        stop.longitude
+                    ],
+                    {
+                        radius: 8,
+                        color: "green",
+                        fillColor: "green",
+                        fillOpacity: 0.8
+                    }
+                ).addTo(markersLayer);
+
+
+                marker.bindPopup(
+                    `<b>Fuel Stop ${index + 1}</b><br><br>
+
+                    <b>${stop.station_name}</b><br>
+
+                    ${stop.address}<br>
+
+                    ${stop.city}, ${stop.state}<br><br>
+
+                    Fuel Price:
+                    $${stop.fuel_price_per_gallon}/gal<br>
+
+                    Fuel Purchased:
+                    ${stop.fuel_purchased_gallons} gal<br>
+
+                    Fuel Cost:
+                    $${stop.fuel_cost}`
+                );
+
+            }
+        );
+
+
+        // Fit map to route
+        map.fitBounds(routeLayer.getBounds());
+
+
+        // Summary
+        document.getElementById("summary").innerHTML = `
+
+            <span>
+                Distance:
+                ${data.route.distance_miles} miles
+            </span>
+
+            <span>
+                Duration:
+                ${data.route.duration_hours} hours
+            </span>
+
+            <span>
+                Fuel Required:
+                ${data.fuel.total_fuel_gallons} gal
+            </span>
+
+            <span>
+                Fuel Purchased:
+                ${data.fuel.total_fuel_purchased} gal
+            </span>
+
+            <span>
+                Total Fuel Cost:
+                $${data.fuel.total_fuel_cost}
+            </span>
+
+            <span>
+                Stops:
+                ${data.fuel.fuel_stops.length}
+            </span>
+
+        `;
+
+    }
+
+
+    // Automatically calculate Birmingham -> Dallas
+    calculateRoute();
+
+</script>
+
+</body>
+</html>
